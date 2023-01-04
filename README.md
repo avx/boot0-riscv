@@ -40,3 +40,21 @@ $ lzma -h
 
 lzma 9.22 Copyright (C) 2006 Ville Koskinen
 Based on LZMA SDK 9.22 Copyright (C) 1999-2011 Igor Pavlov
+
+## Examples
+
+- rv64, lzma, crc32, vmlinux.bin:
+```
+payload            : 17619456 bytes
+compressed payload : 4001639 bytes
+boot0+comp.payload : 4008872 bytes
+boot0              : 7233 bytes
+```
+
+- rv64, lz4, vmlinux.bin:
+```
+payload            : 17619456 bytes
+compressed payload : 5472395 bytes
+boot0+comp.payload : 5474208 bytes
+boot0              : 1813 bytes
+```

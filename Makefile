@@ -70,7 +70,7 @@ endif
 
 OBJS  = $(build_dir)/entry.o
 OBJS += $(build_dir)/boot0.o
-OBJS += $(build_dir)/memcpy.o
+OBJS += $(build_dir)/memops.o
 ifeq ($(FW_PAYLOAD_CRC32), 1)
 OBJS += $(build_dir)/crc32.o
 endif
