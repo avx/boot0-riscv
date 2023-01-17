@@ -26,7 +26,11 @@
 #define HAVE_RISCV_MEMCPY
 #define HAVE_RISCV_MEMSET
 #define HAVE_RISCV_MEMMOVE
-//#define USE_HALF_WORD_OPS
+//#define HAVE_RISCV_MEMMOVE_HALF_WORDS
+
+#define _memcpy memcpy
+#define _memset memset
+#define _memmove memmove
 
 #if __riscv_xlen == 32
 # define REG_S sw
@@ -40,64 +44,65 @@
 # error unsupported __riscv_xlen
 #endif
 
-.section .text
+.section .text, "ax", @progbits
     # we want to reduce the size of the code, so in order
     # to comply with the compressed ISA specification,
     # we will use preferably s0-s1, a0-a5 registers.
 
-    # byte load/store operations only if size less than threshold
-    .equ BOPS_THRESHOLD, 2*SZREG
-
 #ifdef HAVE_RISCV_MEMCPY
-.globl memcpy
+.globl _memcpy
+.type _memcpy, @function
     #
-    # void *memcpy(void *dst, void *src, size_t sz)
+    # void *_memcpy(void *dst, void *src, size_t sz)
     #
     # Copies sz bytes from memory area src to memory area dst.
     # The memory areas must not overlap. Uses load/stores of XLEN.
     # For mutual misaligned buffers does byte-by-byte coping.
-memcpy:
+_memcpy:
     # save initial dst value
-    mv t6, a0
+    mv t2, a0
 
     # threshold for byte-by-byte copying
-    li a5, BOPS_THRESHOLD
-    bltu a2, a5, .Lmemcpy_bops
+    li a3, 2 * SZREG
+    bltu a2, a3, .Lmemcpy_bops
 
     # the src and dst buffers must have the same
     # alignment for load/store operations
-    and a4, a0, SZREG-1
-    and a5, a1, SZREG-1
-    bne a4, a5, .Lmemcpy_bops
-    beqz a4, .Lmemcpy_main
+    andi a3, a0, SZREG-1
+    andi a4, a1, SZREG-1
+    bne a3, a4, .Lmemcpy_bops
+    beqz a3, .Lmemcpy_main
 
     # handle head misalignments
-    li a5, SZREG
-    sub a4, a5, a4
-    add a3, a0, a4
+    addi a3, a3, -SZREG
+    add a2, a2, a3
+    sub a3, a0, a3
 0:  lb a5, 0(a1)
     sb a5, 0(a0)
     addi a1, a1, 1
     addi a0, a0, 1
     blt a0, a3, 0b
-    sub a2, a2, a4
 
-    # copy 16/8/4/2/1*SZREG at one cycle iteration
+    # copy 16/8/4/2/1*SZREG per one cycle iteration
 .Lmemcpy_main:
     # according to convention
     # s0, s1 must be stored by callee
-    mv t5, s0
-    mv t4, s1
+    mv t0, s0
+    mv t1, s1
 
+#ifndef __riscv_abi_rve
     li a7, 16*SZREG
     mv a3, a7
+    bltu a2, a7, 7f
+#else
     j 6f
-1:  REG_L a4, 8*SZREG(a1)
-    REG_L a5, 9*SZREG(a1)
+#endif
+1:  REG_L a4,  8*SZREG(a1)
+    REG_L a5,  9*SZREG(a1)
     REG_L s0, 10*SZREG(a1)
     REG_L s1, 11*SZREG(a1)
-    REG_S a4, 8*SZREG(a0)
-    REG_S a5, 9*SZREG(a0)
+    REG_S a4,  8*SZREG(a0)
+    REG_S a5,  9*SZREG(a0)
     REG_S s0, 10*SZREG(a0)
     REG_S s1, 11*SZREG(a0)
     REG_L a4, 12*SZREG(a1)
@@ -108,27 +113,33 @@ memcpy:
     REG_S a5, 13*SZREG(a0)
     REG_S s0, 14*SZREG(a0)
     REG_S s1, 15*SZREG(a0)
-2:  REG_L a4, 4*SZREG(a1)
-    REG_L a5, 5*SZREG(a1)
-    REG_L s0, 6*SZREG(a1)
-    REG_L s1, 7*SZREG(a1)
-    REG_S a4, 4*SZREG(a0)
-    REG_S a5, 5*SZREG(a0)
-    REG_S s0, 6*SZREG(a0)
-    REG_S s1, 7*SZREG(a0)
-3:  REG_L a4, 2*SZREG(a1)
-    REG_L a5, 3*SZREG(a1)
-    REG_S a4, 2*SZREG(a0)
-    REG_S a5, 3*SZREG(a0)
-4:  REG_L s0, 1*SZREG(a1)
-    REG_S s0, 1*SZREG(a0)
-5:  REG_L s1, 0*SZREG(a1)
-    REG_S s1, 0*SZREG(a0)
+2:  REG_L a4,  4*SZREG(a1)
+    REG_L a5,  5*SZREG(a1)
+    REG_L s0,  6*SZREG(a1)
+    REG_L s1,  7*SZREG(a1)
+    REG_S a4,  4*SZREG(a0)
+    REG_S a5,  5*SZREG(a0)
+    REG_S s0,  6*SZREG(a0)
+    REG_S s1,  7*SZREG(a0)
+3:  REG_L a4,  2*SZREG(a1)
+    REG_L a5,  3*SZREG(a1)
+    REG_S a4,  2*SZREG(a0)
+    REG_S a5,  3*SZREG(a0)
+4:  REG_L s0,  1*SZREG(a1)
+    REG_S s0,  1*SZREG(a0)
+5:  REG_L s1,  0*SZREG(a1)
+    REG_S s1,  0*SZREG(a0)
     add a0, a0, a3
     add a1, a1, a3
     sub a2, a2, a3
+#ifndef __riscv_abi_rve
 6:  bgeu a2, a7, 1b
-    srli a3, a7, 1
+7:  srli a3, a7, 1
+#else
+6:  li a3, 16*SZREG
+    bgeu a2, a3, 1b
+7:  srli a3, a3, 1
+#endif
     bgeu a2, a3, 2b
     srli a3, a3, 1
     bgeu a2, a3, 3b
@@ -138,88 +149,117 @@ memcpy:
     bgeu a2, a3, 5b
 
     # restore s0, s1
-    mv s1, t4
-    mv s0, t5
+    mv s1, t1
+    mv s0, t0
 
+    # handle tail misalignment
+    # byte-by-byte copying
 .Lmemcpy_bops:
-    # byte-by-byte coping
     beqz a2, 1f
-    add a3, a0, a2
+    add a2, a2, a0
 0:  lb a4, 0(a1)
     sb a4, 0(a0)
     addi a1, a1, 1
     addi a0, a0, 1
-    bltu a0, a3, 0b
+    bltu a0, a2, 0b
 
-    # return initial dst
-1:  mv a0, t6
+    # return initial a0
+1:  mv a0, t2
     ret
+    .size _memcpy, . - _memcpy
 #endif /* HAVE_RISCV_MEMCPY */
 
 #ifdef HAVE_RISCV_MEMSET
-.globl memset
+.globl _memset
+.type _memset, @function
     #
-    # void *memset(void *dst, int ch, size_t sz)
+    # void *_memset(void *dst, int ch, size_t sz)
     #
     # Function fills the first sz bytes of the memory
     # area pointed to by dst with the constant byte ch.
     # Uses stores operations of XLEN (register) size.
-memset:
-    # save return value
-    mv t6, a0
+_memset:
+    # quit if sz is zero
+    beqz a2, 9f
 
-    # threshold for byte-by-byte stores
-    li a5, BOPS_THRESHOLD
-    bltu a2, a5, .Lmemset_bops
+    # will return a0 untouched, further a5 = dst
+    mv a5, a0
 
-    # propagate set value to whole register
-    slli a5, a1, 8
-    or a1, a1, a5
-    slli a5, a1, 16
-    or a1, a1, a5
-#if __riscv_xlen == 64
-    slli a5, a1, 32
-    or a1, a1, a5
-#endif
+    # threshold for byte-by-byte operations
+    li a3, 2 * SZREG
+    bltu a2, a3, .Lmemset_bops
 
     # is dst aligned to register size
-    and a4, a0, SZREG-1
-    beqz a4, .Lmemset_main
+    andi a3, a5, SZREG-1
+    beqz a3, .Lmemset_main
 
     # handle head misalignment
-    li a5, SZREG
-    sub a4, a5, a4
-    add a3, a0, a4
-0:  sb a1, 0(a0)
-    addi a0, a0, 1
-    blt a0, a3, 0b
-    sub a2, a2, a4
+    addi a3, a3, -SZREG
+    add a2, a2, a3
+    sub a3, a5, a3
+0:  sb a1, 0(a5)
+    addi a5, a5, 1
+    blt a5, a3, 0b
 
-    # stores 16/8/4/2/1*SZREG at one cycle iteration
 .Lmemset_main:
-    li a5, 16*SZREG
-    mv a3, a5
-    j 6f
-1:  REG_S a1, 8*SZREG(a0)
-    REG_S a1, 9*SZREG(a0)
-    REG_S a1, 10*SZREG(a0)
-    REG_S a1, 11*SZREG(a0)
-    REG_S a1, 12*SZREG(a0)
-    REG_S a1, 13*SZREG(a0)
-    REG_S a1, 14*SZREG(a0)
-    REG_S a1, 15*SZREG(a0)
-2:  REG_S a1, 4*SZREG(a0)
-    REG_S a1, 5*SZREG(a0)
-    REG_S a1, 6*SZREG(a0)
-    REG_S a1, 7*SZREG(a0)
-3:  REG_S a1, 2*SZREG(a0)
-    REG_S a1, 3*SZREG(a0)
-4:  REG_S a1, 1*SZREG(a0)
-5:  REG_S a1, 0*SZREG(a0)
-    add a0, a0, a3
+    # zero set byte
+    beqz a1, 1f
+
+    # propagate set value to whole register
+    zext.b a1, a1
+    slli a3, a1, 8
+    or a1, a1, a3
+    slli a3, a1, 16
+    or a1, a1, a3
+#if __riscv_xlen == 64
+    slli a3, a1, 32
+    or a1, a1, a3
+#endif
+
+1:  li a4, 32*SZREG
+    mv a3, a4
+    bltu a2, a4, 7f
+
+    # stores 32/16/8/4/2/1*SZREG per one cycle iteration
+0:  REG_S a1, 16*SZREG(a5)
+    REG_S a1, 17*SZREG(a5)
+    REG_S a1, 18*SZREG(a5)
+    REG_S a1, 19*SZREG(a5)
+    REG_S a1, 20*SZREG(a5)
+    REG_S a1, 21*SZREG(a5)
+    REG_S a1, 22*SZREG(a5)
+    REG_S a1, 23*SZREG(a5)
+    REG_S a1, 24*SZREG(a5)
+    REG_S a1, 25*SZREG(a5)
+    REG_S a1, 26*SZREG(a5)
+    REG_S a1, 27*SZREG(a5)
+    REG_S a1, 28*SZREG(a5)
+    REG_S a1, 29*SZREG(a5)
+    REG_S a1, 30*SZREG(a5)
+    REG_S a1, 31*SZREG(a5)
+1:  REG_S a1,  8*SZREG(a5)
+    REG_S a1,  9*SZREG(a5)
+    REG_S a1, 10*SZREG(a5)
+    REG_S a1, 11*SZREG(a5)
+    REG_S a1, 12*SZREG(a5)
+    REG_S a1, 13*SZREG(a5)
+    REG_S a1, 14*SZREG(a5)
+    REG_S a1, 15*SZREG(a5)
+2:  REG_S a1,  4*SZREG(a5)
+    REG_S a1,  5*SZREG(a5)
+    REG_S a1,  6*SZREG(a5)
+    REG_S a1,  7*SZREG(a5)
+3:  REG_S a1,  2*SZREG(a5)
+    REG_S a1,  3*SZREG(a5)
+4:  REG_S a1,  1*SZREG(a5)
+5:  REG_S a1,  0*SZREG(a5)
+    add a5, a5, a3
     sub a2, a2, a3
-6:  bgeu a2, a5, 1b
-    srli a3, a5, 1
+6:  bgeu a2, a4, 0b
+    beqz a2, 9f
+7:  srli a3, a4, 1
+    bgeu a2, a3, 1b
+    srli a3, a3, 1
     bgeu a2, a3, 2b
     srli a3, a3, 1
     bgeu a2, a3, 3b
@@ -230,100 +270,86 @@ memset:
 
     # handle tail misalignment
 .Lmemset_bops:
-    beqz a2, 1f
-    add a3, a0, a2
-0:  sb a1, 0(a0)
-    addi a0, a0, 1
-    bltu a0, a3, 0b
-
-    # return initial a0
-1:  mv a0, t6
-    ret
+    add a2, a2, a5
+0:  sb a1, 0(a5)
+    addi a5, a5, 1
+    bltu a5, a2, 0b
+9:  ret
+    .size _memset, . - _memset
 #endif /* HAVE_RISCV_MEMSET */
 
 #ifdef HAVE_RISCV_MEMMOVE
-.globl memmove
+.globl _memmove
+.type _memmove, @function
     #
-    # void *memmove(void *dst, void *src, size_t sz)
+    # void *_memmove(void *dst, void *src, size_t sz)
     #
     # Function copies sz bytes from memory area src to memory area dst.
     # The memory areas may overlap. Copies using 8/4/2/1 bytes load/stores
-memmove:
-    # save a0, s1, s0
-    mv t6, a0
-    mv t4, s1
+_memmove:
+    # save a0, s1
+    mv t2, a0
+    mv t1, s1
 
-    # quit if src == dst
-    beq a0, a1, .Lmemmove_end
+    # threshold for byte operations
+    li a5, 2 * SZREG
 
-    # threshold for byte operattions
-    li s1, BOPS_THRESHOLD
+    # find out mutual buffer alignment
+#if __riscv_xlen == 64
+    andi a3, a0, 7
+    andi a4, a1, 7
+    li s1, 8
+    beq a3, a4, 1f
+    andi a3, a3, 3
+    andi a4, a4, 3
+#else
+    andi a3, a0, 3
+    andi a4, a1, 3
+#endif
+    li s1, 4
+    beq a3, a4, 1f
+#ifdef HAVE_RISCV_MEMMOVE_HALF_WORDS
+    andi a3, a3, 1
+    andi a4, a4, 1
+    li s1, 2
+    beq a3, a4, 1f
+#endif
+    li s1, 0
 
     # copy from the end if dst > src
-    bltu a1, a0, .Lmemmove_r
+1:  bltu a1, a0, .Lmemmove_r
 
-    # byte-by-byte copying if sz is less than threshold
-    bltu a2, s1, .Lmemmove_1b
+    # byte copy if sz is less than threshold
+    bltu a2, a5, .Lmemmove_1b
 
-#if __riscv_xlen == 64
-    # use 8-byte load/stores (ld/sd) if the buffers
-    # are mutually aligned on an 8-byte boundary
-    and a3, a0, 7
-    and a4, a1, 7
-    li s1, 8
-    beq a3, a4, .Lmemmove_main
-#endif
-    # same for 4-bytes load/stores
-1:  and a3, a0, 3
-    and a4, a1, 3
-    li s1, 4
-    beq a3, a4, .Lmemmove_main
-#ifdef USE_HALF_WORD_OPS
-    # same for 2-bytes load/stores
-1:  and a3, a0, 1
-    and a4, a1, 1
-    li s1, 2
-    beq a3, a4, .Lmemmove_main
-#endif
+    # byte copy if src and dst are mutual unaligned
+    beqz s1, .Lmemmove_1b
 
-.Lmemmove_1b:
-    # byte-by-byte copying
-1:  beqz a2, .Lmemmove_end
-    add a4, a0, a2
+    # at this point:
+    # s1 = 8/4/2
+    # a4 = head misaligned bytes
+
+    beqz a4, 1f
+
+    # handle head misalignment by byte copying
+    sub a4, s1, a4
+    sub a2, a2, a4
+    add a4, a4, a0
 0:  lb a3, 0(a1)
     sb a3, 0(a0)
     addi a1, a1, 1
     addi a0, a0, 1
     bltu a0, a4, 0b
 
-.Lmemmove_end:
-    # restore saved registers
-    mv a0, t6
-    mv s1, t4
-    ret
-
-.Lmemmove_main:
-    # at this point:
-    # s1 = 8/4/2
-    # a4 = head misaligned bytes
-    beqz a4, 1f
-
-    # handle head misalignment by byte copying
-    sub a4, s1, a4
+    # calculate last address and tail misaligned bytes number
+1:  addi a4, s1, -1
+    xori a4, a4, -1
+    and a4, a2, a4
     sub a2, a2, a4
-    add a5, a0, a4
-0:  lb a3, 0(a1)
-    sb a3, 0(a0)
-    addi a1, a1, 1
-    addi a0, a0, 1
-    bltu a0, a5, 0b
+    add a4, a4, a0
 
-    # calculate last address and tail misaligned bytes
-1:  div a4, a2, s1
-    mul a4, a4, s1
-    sub a2, a2, a4
-    add a4, a0, a4
-
+    # use 8/4/2 byte load/store instructions if buffers are
+    # mutually aligned on 8/4/2 byte boundary respectively.
 #if __riscv_xlen == 64
     li a5, 8
     bne s1, a5, 1f
@@ -341,8 +367,8 @@ memmove:
     add a1, a1, s1
     add a0, a0, s1
     bltu a0, a4, 0b
+#ifdef HAVE_RISCV_MEMMOVE_HALF_WORDS
     j .Lmemmove_1b
-#ifdef USE_HALF_WORD_OPS
 1:  li a5, 2
     bne s1, a5, 1f
 0:  lh a3, 0(a1)
@@ -351,50 +377,39 @@ memmove:
     add a0, a0, s1
     bltu a0, a4, 0b
 #endif
-1:  j .Lmemmove_1b
+
+    # byte copy
+.Lmemmove_1b:
+1:  beqz a2, .Lmemmove_end
+    add a2, a2, a0
+0:  lb a3, 0(a1)
+    sb a3, 0(a0)
+    addi a1, a1, 1
+    addi a0, a0, 1
+    bltu a0, a2, 0b
+
+.Lmemmove_end:
+    # restore saved registers
+    mv s1, t1
+    mv a0, t2
+    ret
 
 .Lmemmove_r:
     # start from the end: src += sz, dst += sz
     add a0, a0, a2
     add a1, a1, a2
 
-    # s1 = threshold for byte-by-byte copying
-    bltu a2, s1, .Lmemmove_r1b
+    # here: a5 = threshold for byte-by-byte copying
+    bltu a2, a5, .Lmemmove_r1b
 
-#if __riscv_xlen == 64
-    # use 8-byte load/stores (ld/sd) if the buffers
-    # are mutually aligned on an 8-byte boundary and
-    # the buffers do not overlap too much for such copy
-    and a3, a0, 7
-    and a4, a1, 7
-    li s1, 8
-    beq a3, a4, .Lmemmove_rmain
-#endif
-    # same for 4-bytes load/stores
-1:  and a3, a0, 3
-    and a4, a1, 3
-    li s1, 4
-    beq a3, a4, .Lmemmove_rmain
-#ifdef USE_HALF_WORD_OPS
-    # same for 2-bytes load/stores
-1:  and a3, a0, 1
-    and a4, a1, 1
-    li s1, 2
-    beq a3, a4, .Lmemmove_rmain
-#endif
+    # byte copy if src and dst are mutual unaligned
+    beqz s1, .Lmemmove_r1b
 
-.Lmemmove_r1b:
-    # byte-by-byte copying
-1:  beqz a2, .Lmemmove_end
-    sub a5, a0, a2
-0:  addi a1, a1, -1
-    addi a0, a0, -1
-    lb a3, 0(a1)
-    sb a3, 0(a0)
-    bgtu a0, a5, 0b
-    j .Lmemmove_end
+    # fix head misaligned bytes
+    add a4, a4, a2
+    addi a3, s1, -1
+    and a4, a4, a3
 
-.Lmemmove_rmain:
     # s1 = 8/4/2
     # a4 = head misaligned bytes
     beqz a4, 1f
@@ -408,13 +423,15 @@ memmove:
     sb a3, 0(a0)
     bgtu a0, a5, 0b
 
-    # calculate last address and tail misaligned bytes
-1:  div a4, a2, s1
-    mul a4, a4, s1
+    # calculate last address and tail misaligned bytes number
+1:  addi a4, s1, -1
+    xori a4, a4, -1
+    and a4, a2, a4
     sub a2, a2, a4
     sub a4, a0, a4
 
-    # 8/4/2-bytes at a time copying
+    # use 8/4/2 byte load/store instructions if buffers are
+    # mutually aligned on 8/4/2 byte boundary respectively.
 #if __riscv_xlen == 64
     li a5, 8
     bne s1, a5, 1f
@@ -432,8 +449,8 @@ memmove:
     lw a3, 0(a1)
     sw a3, 0(a0)
     bltu a4, a0, 0b
+#ifdef HAVE_RISCV_MEMMOVE_HALF_WORDS
     j .Lmemmove_r1b
-#ifdef USE_HALF_WORD_OPS
 1:  li a5, 2
     bne s1, a5, 1f
 0:  sub a1, a1, s1
@@ -442,6 +459,16 @@ memmove:
     sh a3, 0(a0)
     bltu a4, a0, 0b
 #endif
-1:  j .Lmemmove_r1b
 
+    # byte copy
+.Lmemmove_r1b:
+1:  beqz a2, .Lmemmove_end
+    sub a5, a0, a2
+0:  addi a1, a1, -1
+    addi a0, a0, -1
+    lb a3, 0(a1)
+    sb a3, 0(a0)
+    bgtu a0, a5, 0b
+    j .Lmemmove_end
+    .size _memmove, . - _memmove
 #endif /* HAVE_RISCV_MEMMOVE */

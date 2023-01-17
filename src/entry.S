@@ -48,14 +48,6 @@ entry:
 	mv s0, a0
 	mv s1, a1
 
-	# zero bss
-	lla t0, bss_start
-	lla t1, bss_end
-1:
-	store zero, (t0)
-	add t0, t0, __SIZEOF_POINTER__
-	blt t0, t1, 1b
-
 	# set up a stack for C
 	lla sp, stack
 
@@ -63,8 +55,8 @@ entry:
 	call c_start
 
 	# say other hart where to go
-	lla t3, jump_addr
-	store a0, 0(t3)
+	lla t0, jump_addr
+	store a0, 0(t0)
 	fence
 
 	mv t0, a0
@@ -78,13 +70,13 @@ entry:
 
 .align 2
 wait_boot_hart:
-	lla t3, jump_addr
+	lla t1, jump_addr
 2:
 	# reduce bus traffic
 .rept 8
 	nop
 .endr
-	load t0, 0(t3)
+	load t0, 0(t1)
 	beqz t0, 2b
 	jr t0
 

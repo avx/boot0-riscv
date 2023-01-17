@@ -55,6 +55,7 @@ static void *SzAlloc(ISzAllocPtr p, size_t size)
 
     ret = &sz_alloc_pool[sz_alloc_ated];
     sz_alloc_ated += size;
+    memset(ret, 0, size);
 
     return ret;
 }
